@@ -1,0 +1,118 @@
+import os
+import sys
+import time
+import wave
+import tempfile
+import threading
+import requests
+import json
+from googletrans import Translator
+import faster_whisper
+import torch
+import pyaudiowpatch as pyaudio
+from faster_whisper import WhisperModel as whisper
+
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+# A bigger audio buffer gives better accuracy
+# but also increases latency in response.
+# 表示音频缓冲时间的常量
+AUDIO_BUFFER = 5
+
+model_size = input("请输入模型大小（tiny, small, medium, large-v2, large-v3）: ")
+
+# 根据用户输入的模型大小设置路径
+path = os.path.join(os.path.dirname(__file__), model_size)
+lan = input("请输入翻译为什么语言以下分别代表简体中文，繁体中文，日语，英语（zh-CN, zh-TW, ja, en）: ")
+
+# 确保路径存在
+if not os.path.exists(path):
+    print(f"指定的路径 {path} 不存在。")
+    exit(1)
+
+# 此函数使用 PyAudio 库录制音频，并将其保存为一个临时的 WAV 文件。
+# 使用 pyaudio.PyAudio 实例创建一个音频流，通过指定回调函数 callback 来实时写入音频数据到 WAV 文件。
+# time.sleep(AUDIO_BUFFER) 会阻塞执行，确保录制足够的音频时间。
+# 最后，函数返回保存的 WAV 文件的文件名。
+def record_audio(p, device):
+    """Record audio from microphone and save to temporary WAV file."""
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        filename = f.name
+        wave_file = wave.open(filename, "wb")
+        wave_file.setnchannels(device["maxInputChannels"])
+        wave_file.setsampwidth(pyaudio.get_sample_size(pyaudio.paInt16))
+        wave_file.setframerate(int(device["defaultSampleRate"]))
+
+        def callback(in_data, frame_count, time_info, status):
+            """Write frames and return PA flag"""
+            wave_file.writeframes(in_data)
+            return (in_data, pyaudio.paContinue)
+
+        stream = p.open(
+            format=pyaudio.paInt16,
+            channels=device["maxInputChannels"],
+            rate=int(device["defaultSampleRate"]),
+            frames_per_buffer=pyaudio.get_sample_size(pyaudio.paInt16),
+            input=True,
+            input_device_index=device["index"],
+            stream_callback=callback,
+        )
+
+        try:
+            time.sleep(AUDIO_BUFFER)  # Blocking execution while playing
+        finally:
+            stream.stop_stream()
+            stream.close()
+            wave_file.close()
+            # print(f"{filename} saved.")
+    return filename
+
+# 此函数使用 Whisper 模型对录制的音频进行转录，并输出转录结果。
+def whisper_audio(filename, model):
+    """Transcribe audio buffer and display."""
+    segments, info = model.transcribe(filename, beam_size=5, language="zh", vad_filter=True, vad_parameters=dict(min_silence_duration_ms=1000))
+    os.remove(filename)
+    for segment in segments:
+        # 调用 translate_text 函数进行翻译
+        translated_texts = translate_text([segment.text])
+        # 打印翻译后的文本
+        for translated_text in translated_texts:
+            print(translated_text)
+#翻译函数
+
+def translate_text(texts):
+    translator = Translator()
+    translated_texts = []
+    for text in texts:
+        translation = translator.translate(text, dest=lan)  # 将目标语言设置为中文
+        translated_texts.append(translation.text)
+    return translated_texts
+
+# main 函数是整个脚本的主控制函数。
+# 加载 Whisper 模型，选择合适的计算设备（GPU 或 CPU）。
+# 获取默认的 WASAPI 输出设备信息，并选择默认的扬声器（输出设备）。
+# 使用 PyAudio 开始录制音频，并通过多线程运行 whisper_audio 函数进行音频转录。
+
+def main():
+    """Load model record audio and transcribe from default microphone."""
+    print("Loading model...")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using {device} device.")
+    model = whisper(path, device=device, local_files_only=True)
+
+    print("Model loaded.")
+
+    with pyaudio.PyAudio() as pya:
+        # Get default microphone info
+        default_microphone = pya.get_device_info_by_index(pya.get_default_input_device_info()["index"])
+
+        print(
+            f"Recording from: {default_microphone['name']} ({default_microphone['index']})\n"
+        )
+
+        while True:
+            filename = record_audio(pya, default_microphone)
+            thread = threading.Thread(target=whisper_audio, args=(filename, model))
+            thread.start()
+
+main()
