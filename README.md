@@ -10,7 +10,7 @@ gpt版和google版同上，有mic的代表识别麦克风音频。
 注意：国内使用谷歌翻译版和gpt版需要全局代理。deepseek版请去官网删去api，很便宜很方便，申请送500万token够用很久。注意创建api后复制到别的地方，因为创建以后无法再在网站查看并复制了。
 软件打包了cuda，我的gpu电脑可以运行，理论上cpu电脑也可以用，但是比较慢，建议使用small模型。
 
-使用方法：首先在以下网站下载模型：https://huggingface.co/guillaumekln 或者 https://huggingface.co/Systran （似乎第二个网站下载的largev2模型会输出一些作者放进去的话，类似by索兰雅这种）
+使用方法：下载faster-whisper实时翻译压缩包，解压。然后在以下网站下载模型：https://huggingface.co/guillaumekln 或者 https://huggingface.co/Systran （似乎第二个网站下载的largev2模型会输出一些作者放进去的话，类似by索兰雅这种）
 有tiny，small，medium，large-v2，large-v3，几种模型。点进去以后点击model card边上的Files and versions，将6个文件全部下载，放在与模型名一样的文件夹内（例如medium文件夹内），
 然后将此文件夹放置在与exe同一文件夹下。
 
